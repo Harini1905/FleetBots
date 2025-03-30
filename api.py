@@ -1,12 +1,11 @@
 from fastapi import FastAPI
 import random
 import time
+import uuid
 
 app = FastAPI()
 
-@app.get("/")
-def read_root():
-    return {"message": "Slambot Fleet API is running!"}
+sessions = {}
 
 def generate_sensor_data(rover_id):
     """Simulates rover sensor data"""
@@ -19,49 +18,53 @@ def generate_sensor_data(rover_id):
         "battery_level": round(random.uniform(10, 100), 2)
     }
 
-fleet_status = {f"Rover-{i}": {"status": "idle", "battery": random.randint(50, 100)} for i in range(1, 6)}
+@app.post("/api/session/start")
+def start_session():
+    """Creates a new session with an isolated fleet"""
+    session_id = str(uuid.uuid4())
+    fleet_status = {f"Rover-{i}": {"status": "idle", "battery": random.randint(50, 100)} for i in range(1, 6)}
+    sessions[session_id] = fleet_status
+    return {"session_id": session_id, "message": "Session started. Use this ID for API calls."}
 
 @app.get("/api/fleet/status")
-def get_fleet_status():
-    """Returns the status of all rovers"""
-    return fleet_status
+def get_fleet_status(session_id: str):
+    """Returns the fleet status for a specific session"""
+    return sessions.get(session_id, {"error": "Invalid session ID"})
 
 @app.post("/api/rover/{rover_id}/reset")
-def reset_rover(rover_id: str):
-    """Resets the rover to idle state"""
-    if rover_id in fleet_status:
-        fleet_status[rover_id]["status"] = "idle"
-        fleet_status[rover_id]["task"] = "None"
+def reset_rover(session_id: str, rover_id: str):
+    """Resets the rover to idle state (per session)"""
+    if session_id in sessions and rover_id in sessions[session_id]:
+        sessions[session_id][rover_id]["status"] = "idle"
         return {"message": f"{rover_id} reset to idle"}
-    return {"error": "Rover not found"}
-
+    return {"error": "Invalid session or rover ID"}
 
 @app.get("/api/rover/{rover_id}/status")
-def get_rover_status(rover_id: str):
-    """Returns status of a specific rover"""
-    return fleet_status.get(rover_id, {"error": "Rover not found"})
+def get_rover_status(session_id: str, rover_id: str):
+    """Returns status of a specific rover (per session)"""
+    return sessions.get(session_id, {}).get(rover_id, {"error": "Rover not found"})
 
 @app.post("/api/rover/{rover_id}/move")
-def move_rover(rover_id: str, direction: str):
-    """Moves the rover in a given direction"""
-    if rover_id in fleet_status:
-        fleet_status[rover_id]["status"] = f"Moving {direction}"
+def move_rover(session_id: str, rover_id: str, direction: str):
+    """Moves the rover in a given direction (per session)"""
+    if session_id in sessions and rover_id in sessions[session_id]:
+        sessions[session_id][rover_id]["status"] = f"Moving {direction}"
         return {"message": f"{rover_id} moving {direction}"}
-    return {"error": "Rover not found"}
+    return {"error": "Invalid session or rover ID"}
 
 @app.get("/api/rover/{rover_id}/battery")
-def get_battery_level(rover_id: str):
-    """Returns battery level of a specific rover"""
-    if rover_id in fleet_status:
-        return {"rover_id": rover_id, "battery_level": fleet_status[rover_id]["battery"]}
-    return {"error": "Rover not found"}
+def get_battery_level(session_id: str, rover_id: str):
+    """Returns battery level of a specific rover (per session)"""
+    if session_id in sessions and rover_id in sessions[session_id]:
+        return {"rover_id": rover_id, "battery_level": sessions[session_id][rover_id]["battery"]}
+    return {"error": "Invalid session or rover ID"}
 
 @app.get("/api/rover/{rover_id}/sensor-data")
-def get_sensor_data(rover_id: str):
-    """Fetch sensor data from a specific rover"""
-    if rover_id in fleet_status:
+def get_sensor_data(session_id: str, rover_id: str):
+    """Fetch sensor data from a specific rover (per session)"""
+    if session_id in sessions and rover_id in sessions[session_id]:
         return generate_sensor_data(rover_id)
-    return {"error": "Rover not found"}
+    return {"error": "Invalid session or rover ID"}
 
 if __name__ == "__main__":
     import uvicorn
