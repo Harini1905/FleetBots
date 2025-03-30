@@ -26,6 +26,16 @@ def get_fleet_status():
     """Returns the status of all rovers"""
     return fleet_status
 
+@app.post("/api/rover/{rover_id}/reset")
+def reset_rover(rover_id: str):
+    """Resets the rover to idle state"""
+    if rover_id in fleet_status:
+        fleet_status[rover_id]["status"] = "idle"
+        fleet_status[rover_id]["task"] = "None"
+        return {"message": f"{rover_id} reset to idle"}
+    return {"error": "Rover not found"}
+
+
 @app.get("/api/rover/{rover_id}/status")
 def get_rover_status(rover_id: str):
     """Returns status of a specific rover"""
