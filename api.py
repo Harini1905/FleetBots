@@ -16,6 +16,8 @@ MOVEMENT_DELTAS = {
     "right": (1, 0)
 }
 
+TASKS = ["Soil Analysis", "Irrigation", "Weeding", "Crop Monitoring"]
+
 def generate_sensor_data(rover_id):
     """Simulates rover sensor data"""
     return {
@@ -52,7 +54,8 @@ def start_session():
         fleet_status[f"Rover-{i}"] = {
             "status": "idle", 
             "battery": random.randint(50, 100), 
-            "coordinates": new_position
+            "coordinates": new_position,
+            "task": None
         }
     
     sessions[session_id] = fleet_status
@@ -68,6 +71,7 @@ def reset_rover(session_id: str, rover_id: str):
     """Resets the rover to idle state (per session)"""
     if session_id in sessions and rover_id in sessions[session_id]:
         sessions[session_id][rover_id]["status"] = "idle"
+        sessions[session_id][rover_id]["task"] = None
         return {"message": f"{rover_id} reset to idle."}
     return {"error": "Invalid session or rover ID"}
 
@@ -86,6 +90,17 @@ def move_rover(session_id: str, rover_id: str, direction: str):
         sessions[session_id][rover_id]["status"] = f"Moving {direction}"
         threading.Thread(target=move_rover_continuously, args=(session_id, rover_id, direction), daemon=True).start()
         return {"message": f"{rover_id} started moving {direction}"}
+    return {"error": "Invalid session or rover ID"}
+
+@app.post("/api/rover/{rover_id}/task")
+def assign_task(session_id: str, rover_id: str, task: str):
+    """Assigns a task to a rover (per session)"""
+    if session_id in sessions and rover_id in sessions[session_id]:
+        if task not in TASKS:
+            return {"error": "Invalid task. Choose from: Soil Analysis, Irrigation, Weeding, Crop Monitoring."}
+        
+        sessions[session_id][rover_id]["task"] = task
+        return {"message": f"{rover_id} assigned to task: {task}"}
     return {"error": "Invalid session or rover ID"}
 
 @app.get("/api/rover/{rover_id}/battery")
