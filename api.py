@@ -7,6 +7,14 @@ app = FastAPI()
 
 sessions = {}
 
+# Movement deltas for coordinate updates
+MOVEMENT_DELTAS = {
+    "forward": (0, 1),
+    "backward": (0, -1),
+    "left": (-1, 0),
+    "right": (1, 0)
+}
+
 def generate_sensor_data(rover_id):
     """Simulates rover sensor data"""
     return {
@@ -22,7 +30,10 @@ def generate_sensor_data(rover_id):
 def start_session():
     """Creates a new session with an isolated fleet"""
     session_id = str(uuid.uuid4())
-    fleet_status = {f"Rover-{i}": {"status": "idle", "battery": random.randint(50, 100)} for i in range(1, 6)}
+    fleet_status = {
+        f"Rover-{i}": {"status": "idle", "battery": random.randint(50, 100), "coordinates": (0, 0)}
+        for i in range(1, 6)
+    }
     sessions[session_id] = fleet_status
     return {"session_id": session_id, "message": "Session started. Use this ID for API calls."}
 
@@ -36,7 +47,8 @@ def reset_rover(session_id: str, rover_id: str):
     """Resets the rover to idle state (per session)"""
     if session_id in sessions and rover_id in sessions[session_id]:
         sessions[session_id][rover_id]["status"] = "idle"
-        return {"message": f"{rover_id} reset to idle"}
+        sessions[session_id][rover_id]["coordinates"] = (0, 0)
+        return {"message": f"{rover_id} reset to idle and coordinates set to (0,0)"}
     return {"error": "Invalid session or rover ID"}
 
 @app.get("/api/rover/{rover_id}/status")
@@ -46,10 +58,18 @@ def get_rover_status(session_id: str, rover_id: str):
 
 @app.post("/api/rover/{rover_id}/move")
 def move_rover(session_id: str, rover_id: str, direction: str):
-    """Moves the rover in a given direction (per session)"""
+    """Moves the rover in a given direction (per session) and updates coordinates"""
     if session_id in sessions and rover_id in sessions[session_id]:
+        if direction not in MOVEMENT_DELTAS:
+            return {"error": "Invalid direction. Use forward, backward, left, or right."}
+        
+        # Update coordinates
+        dx, dy = MOVEMENT_DELTAS[direction]
+        x, y = sessions[session_id][rover_id]["coordinates"]
+        sessions[session_id][rover_id]["coordinates"] = (x + dx, y + dy)
+        
         sessions[session_id][rover_id]["status"] = f"Moving {direction}"
-        return {"message": f"{rover_id} moving {direction}"}
+        return {"message": f"{rover_id} moved {direction}", "new_coordinates": sessions[session_id][rover_id]["coordinates"]}
     return {"error": "Invalid session or rover ID"}
 
 @app.get("/api/rover/{rover_id}/battery")
@@ -64,6 +84,13 @@ def get_sensor_data(session_id: str, rover_id: str):
     """Fetch sensor data from a specific rover (per session)"""
     if session_id in sessions and rover_id in sessions[session_id]:
         return generate_sensor_data(rover_id)
+    return {"error": "Invalid session or rover ID"}
+
+@app.get("/api/rover/{rover_id}/coordinates")
+def get_rover_coordinates(session_id: str, rover_id: str):
+    """Returns the current coordinates of the rover"""
+    if session_id in sessions and rover_id in sessions[session_id]:
+        return {"rover_id": rover_id, "coordinates": sessions[session_id][rover_id]["coordinates"]}
     return {"error": "Invalid session or rover ID"}
 
 if __name__ == "__main__":
