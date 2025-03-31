@@ -39,10 +39,22 @@ def move_rover_continuously(session_id, rover_id, direction):
 def start_session():
     """Creates a new session with an isolated fleet"""
     session_id = str(uuid.uuid4())
-    fleet_status = {
-        f"Rover-{i}": {"status": "idle", "battery": random.randint(50, 100), "coordinates": (0, 0)}
-        for i in range(1, 6)
-    }
+    occupied_positions = set()
+    fleet_status = {}
+    
+    for i in range(1, 6):
+        while True:
+            new_position = (random.randint(-10, 10), random.randint(-10, 10))
+            if new_position not in occupied_positions:
+                occupied_positions.add(new_position)
+                break
+        
+        fleet_status[f"Rover-{i}"] = {
+            "status": "idle", 
+            "battery": random.randint(50, 100), 
+            "coordinates": new_position
+        }
+    
     sessions[session_id] = fleet_status
     return {"session_id": session_id, "message": "Session started. Use this ID for API calls."}
 
@@ -56,8 +68,7 @@ def reset_rover(session_id: str, rover_id: str):
     """Resets the rover to idle state (per session)"""
     if session_id in sessions and rover_id in sessions[session_id]:
         sessions[session_id][rover_id]["status"] = "idle"
-        sessions[session_id][rover_id]["coordinates"] = (0, 0)
-        return {"message": f"{rover_id} reset to idle and coordinates set to (0,0)"}
+        return {"message": f"{rover_id} reset to idle."}
     return {"error": "Invalid session or rover ID"}
 
 @app.get("/api/rover/{rover_id}/status")
