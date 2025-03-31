@@ -2,6 +2,7 @@ from fastapi import FastAPI
 import random
 import time
 import uuid
+import threading
 
 app = FastAPI()
 
@@ -25,6 +26,14 @@ def generate_sensor_data(rover_id):
         "temperature": round(random.uniform(10, 40), 2),
         "battery_level": round(random.uniform(10, 100), 2)
     }
+
+def move_rover_continuously(session_id, rover_id, direction):
+    """Moves the rover continuously in the given direction over time"""
+    while sessions[session_id][rover_id]["status"] == f"Moving {direction}":
+        dx, dy = MOVEMENT_DELTAS[direction]
+        x, y = sessions[session_id][rover_id]["coordinates"]
+        sessions[session_id][rover_id]["coordinates"] = (x + dx, y + dy)
+        time.sleep(1)  # Increment position every second
 
 @app.post("/api/session/start")
 def start_session():
@@ -58,18 +67,14 @@ def get_rover_status(session_id: str, rover_id: str):
 
 @app.post("/api/rover/{rover_id}/move")
 def move_rover(session_id: str, rover_id: str, direction: str):
-    """Moves the rover in a given direction (per session) and updates coordinates"""
+    """Moves the rover in a given direction (per session) and updates coordinates incrementally"""
     if session_id in sessions and rover_id in sessions[session_id]:
         if direction not in MOVEMENT_DELTAS:
             return {"error": "Invalid direction. Use forward, backward, left, or right."}
         
-        # Update coordinates
-        dx, dy = MOVEMENT_DELTAS[direction]
-        x, y = sessions[session_id][rover_id]["coordinates"]
-        sessions[session_id][rover_id]["coordinates"] = (x + dx, y + dy)
-        
         sessions[session_id][rover_id]["status"] = f"Moving {direction}"
-        return {"message": f"{rover_id} moved {direction}", "new_coordinates": sessions[session_id][rover_id]["coordinates"]}
+        threading.Thread(target=move_rover_continuously, args=(session_id, rover_id, direction), daemon=True).start()
+        return {"message": f"{rover_id} started moving {direction}"}
     return {"error": "Invalid session or rover ID"}
 
 @app.get("/api/rover/{rover_id}/battery")
