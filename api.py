@@ -1,69 +1,11 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI
 import random
 import time
 import uuid
-import asyncio
-from typing import Dict, List, Set
 
 app = FastAPI()
+
 sessions = {}
-
-# Store for WebSocket connections and historical data
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: Dict[str, Set[WebSocket]] = {}
-        self.data_history: Dict[str, List[dict]] = {}
-        self.max_history_size = 100
-    
-    async def connect(self, websocket: WebSocket, session_id: str):
-        await websocket.accept()
-        if session_id not in self.active_connections:
-            self.active_connections[session_id] = set()
-            self.data_history[session_id] = []
-        self.active_connections[session_id].add(websocket)
-        
-        # Send historical data to new connections
-        if self.data_history[session_id]:
-            await websocket.send_json({
-                "type": "history",
-                "data": self.data_history[session_id]
-            })
-    
-    def disconnect(self, websocket: WebSocket, session_id: str):
-        if session_id in self.active_connections:
-            self.active_connections[session_id].discard(websocket)
-            if not self.active_connections[session_id]:
-                # Clean up empty sessions
-                self.active_connections.pop(session_id, None)
-    
-    async def broadcast(self, message: dict, session_id: str):
-        # Store in history
-        if session_id not in self.data_history:
-            self.data_history[session_id] = []
-        
-        self.data_history[session_id].append(message)
-        
-        # Maintain history size
-        if len(self.data_history[session_id]) > self.max_history_size:
-            self.data_history[session_id] = self.data_history[session_id][-self.max_history_size:]
-        
-        # Broadcast to all connections in the session
-        if session_id in self.active_connections:
-            disconnected = set()
-            for connection in self.active_connections[session_id]:
-                try:
-                    await connection.send_json({
-                        "type": "update",
-                        "data": message
-                    })
-                except Exception:
-                    disconnected.add(connection)
-            
-            # Clean up disconnected clients
-            for conn in disconnected:
-                self.active_connections[session_id].discard(conn)
-
-manager = ConnectionManager()
 
 def generate_sensor_data(rover_id):
     """Simulates rover sensor data"""
@@ -73,8 +15,7 @@ def generate_sensor_data(rover_id):
         "soil_moisture": round(random.uniform(20, 80), 2),
         "soil_pH": round(random.uniform(5.5, 7.5), 2),
         "temperature": round(random.uniform(10, 40), 2),
-        "battery_level": round(random.uniform(10, 100), 2),
-        "random_value": random.uniform(0, 100)  # Added random value as requested
+        "battery_level": round(random.uniform(10, 100), 2)
     }
 
 @app.post("/api/session/start")
@@ -83,35 +24,8 @@ def start_session():
     session_id = str(uuid.uuid4())
     fleet_status = {f"Rover-{i}": {"status": "idle", "battery": random.randint(50, 100)} for i in range(1, 6)}
     sessions[session_id] = fleet_status
-    return {"session_id": session_id, "message": "Session started. Use this ID for API calls and WebSocket connections."}
+    return {"session_id": session_id, "message": "Session started. Use this ID for API calls."}
 
-@app.websocket("/ws/{session_id}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str):
-    await manager.connect(websocket, session_id)
-    try:
-        while True:
-            # Wait for any client messages
-            data = await websocket.receive_text()
-            # Process client messages if needed
-    except WebSocketDisconnect:
-        manager.disconnect(websocket, session_id)
-
-# Background task to generate and broadcast data
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(generate_periodic_data())
-
-async def generate_periodic_data():
-    while True:
-        for session_id in list(sessions.keys()):
-            for rover_id in sessions[session_id]:
-                data = generate_sensor_data(rover_id)
-                await manager.broadcast(data, session_id)
-        
-        # Wait for 1 second before next update
-        await asyncio.sleep(1)
-
-# REST API endpoints
 @app.get("/api/fleet/status")
 def get_fleet_status(session_id: str):
     """Returns the fleet status for a specific session"""
